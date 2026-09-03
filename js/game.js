@@ -29,6 +29,7 @@ export class Game {
     this.waveTimer = 0;
     this.stateTimer = 0;
     this.paused = false;
+    this.touchMode = false; // set by TouchControls on touch devices
     this.time = 0;
     this.spawnAttractField();
   }
@@ -215,11 +216,12 @@ export class Game {
     const blink = Math.floor(this.time * 1.6) % 2 === 0;
     if (this.state === 'attract') {
       if (blink) r.text('PUSH START', W / 2, H / 2 - 14, 28, 'center');
-      r.text('PRESS ENTER', W / 2, H / 2 + 40, 13, 'center');
+      r.text(this.touchMode ? 'TAP TO START' : 'PRESS ENTER', W / 2, H / 2 + 40, 13, 'center');
     } else if (this.state === 'gameover') {
       r.text('GAME OVER', W / 2, H / 2 - 14, 28, 'center');
     } else if (this.paused) {
       r.text('PAUSED', W / 2, H / 2 - 14, 28, 'center');
+      if (this.touchMode) r.text('TAP TO RESUME', W / 2, H / 2 + 40, 13, 'center');
     }
 
     r.end();

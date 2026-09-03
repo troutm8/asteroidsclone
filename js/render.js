@@ -67,6 +67,17 @@ export class Renderer {
     ctx.strokeRect(0, 0, W, H);
   }
 
+  // Switch to CSS-pixel coordinates for overlays (touch buttons, prompts).
+  screenSpace() {
+    const { ctx } = this;
+    ctx.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
+    ctx.strokeStyle = '#fff';
+    ctx.fillStyle = '#fff';
+    ctx.lineWidth = 1.5;
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+  }
+
   poly(points, closed = true) {
     const { ctx } = this;
     ctx.beginPath();
