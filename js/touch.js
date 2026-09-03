@@ -11,6 +11,8 @@ const HOLD = new Set(['left', 'right', 'thrust']); // actions a thumb can slide 
 const TRI_LEFT = [[0.35, -0.45], [-0.4, 0], [0.35, 0.45]];
 const TRI_RIGHT = [[-0.35, -0.45], [0.4, 0], [-0.35, 0.45]];
 const PAUSE_BARS = [[[-0.22, -0.4], [-0.22, 0.4]], [[0.22, -0.4], [0.22, 0.4]]];
+const SPEAKER = [[-0.5, -0.18], [-0.25, -0.18], [0.05, -0.45], [0.05, 0.45], [-0.25, 0.18], [-0.5, 0.18], [-0.5, -0.18]];
+const MUTE_X = [[[0.22, -0.2], [0.5, 0.2]], [[0.5, -0.2], [0.22, 0.2]]];
 
 export class TouchControls {
   constructor(canvas, input, renderer, game) {
@@ -71,6 +73,7 @@ export class TouchControls {
       { action: 'fire',   x: w - mr - r,         y, r },
       { action: 'hyper',  x: w - mr - r,         y: y - gap, r: r * 0.8 },
     ];
+    this.buttons.push({ action: 'mute', x: w - mr - 18 - 44, y: mt + 18, r: 18 });
     if (this.game.state === 'playing') {
       this.buttons.push({ action: 'pause', x: w - mr - 18, y: mt + 18, r: 18 });
     }
@@ -170,6 +173,15 @@ export class TouchControls {
       case 'fire':   ctx.beginPath(); ctx.arc(x, y, r * 0.13, 0, TAU); ctx.fill(); break;
       case 'hyper':  drawText(ctx, 'H', x, y - r * 0.42, r * 0.85, 'center'); break;
       case 'pause':  this.r.strokes(PAUSE_BARS, x, y, 0, r); break;
+      case 'mute':
+        this.r.strokes([SPEAKER], x, y, 0, r);
+        if (this.game.soundOff) {
+          this.r.strokes(MUTE_X, x, y, 0, r);
+        } else {
+          ctx.beginPath(); ctx.arc(x + r * 0.05, y, r * 0.3, -0.9, 0.9); ctx.stroke();
+          ctx.beginPath(); ctx.arc(x + r * 0.05, y, r * 0.5, -0.9, 0.9); ctx.stroke();
+        }
+        break;
     }
   }
 

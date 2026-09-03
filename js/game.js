@@ -34,6 +34,10 @@ export class Game {
     this.stateTimer = 0;
     this.paused = false;
     this.touchMode = false; // set by TouchControls on touch devices
+    this.soundOff = false;  // mirrored from Audio each frame for the HUD
+    this.events = [];       // sound events drained by main each frame
+    this.waveMass = 1;      // rock "mass" at wave start, for the heartbeat
+    this.waveTime = 0;
     this.time = 0;
     this.spawnAttractField();
   }
@@ -65,6 +69,12 @@ export class Game {
     const n = Math.min(WAVE.START + this.wave - 1, WAVE.CAP);
     const avoid = this.ship.alive ? this.ship : { x: W / 2, y: H / 2 };
     for (let i = 0; i < n; i++) this.rocks.push(Asteroid.atEdge('L', avoid));
+    this.waveMass = n * 4;
+    this.waveTime = 0;
+  }
+
+  emit(name) {
+    this.events.push(name);
   }
 
   onBlur() {
@@ -84,6 +94,7 @@ export class Game {
     if (this.paused) return;
 
     if (this.state === 'playing') {
+      this.waveTime += dt;
       this.updateShip(dt, input);
       this.updateSaucerSpawn(dt);
     }
@@ -125,7 +136,10 @@ export class Game {
       }
       if (!ship.inHyper && input.justPressed('fire')) {
         const inFlight = this.bullets.reduce((n, b) => n + (b.owner === 'ship'), 0);
-        if (inFlight < BULLET.MAX) this.bullets.push(ship.fireBullet());
+        if (inFlight < BULLET.MAX) {
+          this.bullets.push(ship.fireBullet());
+          this.emit('fire');
+        }
       }
     } else if (this.lives > 0) {
       this.respawnTimer -= dt;
@@ -183,6 +197,7 @@ export class Game {
     const s = this.saucer;
     if (!s) return;
     this.particles.burst(s.x, s.y, s.vx, s.vy, s.size === 'L' ? 10 : 7);
+    this.emit('saucerExplode');
     if (award) this.addScore(s.score);
     this.saucer = null;
     this.resetSaucerTimer();
@@ -277,6 +292,7 @@ export class Game {
     this.rocks.splice(index, 1);
     if (award) this.addScore(rock.score);
     this.particles.rockBurst(rock);
+    this.emit('explode' + rock.size);
     this.rocks.push(...rock.split());
   }
 
@@ -285,6 +301,7 @@ export class Game {
     if (this.score >= this.nextBonus) {
       this.lives++;
       this.nextBonus += GAME.BONUS_EVERY;
+      this.emit('extraLife');
     }
     if (this.score > this.highScore) this.highScore = this.score;
   }
@@ -292,6 +309,7 @@ export class Game {
   shipDie() {
     const ship = this.ship;
     this.particles.shipBurst(ship);
+    this.emit('shipExplode');
     ship.alive = false;
     ship.inHyper = false;
     this.lives--;
@@ -336,12 +354,15 @@ export class Game {
     if (this.state === 'attract') {
       if (blink) r.text('PUSH START', W / 2, H / 2 - 14, 28, 'center');
       r.text(this.touchMode ? 'TAP TO START' : 'PRESS ENTER', W / 2, H / 2 + 40, 13, 'center');
+      if (!this.touchMode) r.text(this.soundOff ? 'M - SOUND OFF' : 'M - SOUND ON', W / 2, H - 36, 11, 'center');
+      else if (this.soundOff) r.text('SOUND OFF', W / 2, H - 36, 11, 'center');
     } else if (this.state === 'gameover') {
       r.text('GAME OVER', W / 2, H / 2 - 14, 28, 'center');
     } else if (this.paused) {
       r.text('PAUSED', W / 2, H / 2 - 14, 28, 'center');
       if (this.touchMode) r.text('TAP TO RESUME', W / 2, H / 2 + 40, 13, 'center');
     }
+    if (this.state !== 'attract' && this.soundOff) r.text('SOUND OFF', W / 2, H - 36, 11, 'center');
 
     r.end();
   }
