@@ -6,13 +6,27 @@ export class Renderer {
   constructor(canvas) {
     this.canvas = canvas;
     this.ctx = canvas.getContext('2d');
+    this.cssW = 0;
+    this.cssH = 0;
+    this.dpr = 0;
     this.resize();
     window.addEventListener('resize', () => this.resize());
   }
 
+  // Cheap per-frame check so a missed resize event (hidden tab, iOS toolbar
+  // show/hide, rotation) never leaves the canvas at a stale size.
+  checkSize() {
+    const dpr = window.devicePixelRatio || 1;
+    const cw = this.canvas.clientWidth, ch = this.canvas.clientHeight;
+    if (cw !== this.cssW || ch !== this.cssH || dpr !== this.dpr) this.resize();
+  }
+
   resize() {
     const dpr = window.devicePixelRatio || 1;
-    const cw = window.innerWidth, ch = window.innerHeight;
+    const cw = this.canvas.clientWidth || window.innerWidth;
+    const ch = this.canvas.clientHeight || window.innerHeight;
+    this.cssW = cw;
+    this.cssH = ch;
     this.canvas.width = Math.round(cw * dpr);
     this.canvas.height = Math.round(ch * dpr);
     this.dpr = dpr;
@@ -24,6 +38,7 @@ export class Renderer {
   }
 
   begin() {
+    this.checkSize();
     const { ctx, canvas } = this;
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.fillStyle = '#000';
