@@ -69,7 +69,8 @@ Hosted on GitHub Pages at https://troutm8.github.io/asteroidsclone/
 
 ## Build stages
 
-Each stage is committed and playable on its own.
+Each stage is committed and playable on its own. All five stages are
+complete as of 2026-09-03; see README.md for how to play.
 
 1. Ship, asteroids, bullets, collisions, waves, score, lives — keyboard only.
 2. Touch controls, landscape prompt, iOS quirks, home-screen manifest.

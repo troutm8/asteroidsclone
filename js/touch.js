@@ -115,7 +115,7 @@ export class TouchControls {
     const b = this.hit(x, y);
     if (b) {
       this.hold(e.pointerId, b.action);
-    } else if (this.game.state === 'attract') {
+    } else if (this.game.state === 'attract' || this.game.state === 'gameover') {
       this.hold(e.pointerId, 'start');      // tap anywhere to start
     } else if (this.game.paused) {
       this.hold(e.pointerId, 'pause');      // tap anywhere to resume

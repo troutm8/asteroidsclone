@@ -10,6 +10,7 @@ const KEYS = {
   start:  ['Enter'],
   pause:  ['KeyP'],
   mute:   ['KeyM'],
+  back:   ['Backspace'],
 };
 
 // Some browsers and virtual keyboards report an empty e.code; fall back to e.key.
@@ -28,6 +29,7 @@ export class Input {
   constructor() {
     this.down = new Set();
     this.pressed = new Set();
+    this.typed = [];   // letters typed this frame, for high-score initials
     this.codeToAction = new Map();
     for (const [action, codes] of Object.entries(KEYS)) {
       for (const code of codes) this.codeToAction.set(code, action);
@@ -38,6 +40,10 @@ export class Input {
   }
 
   onKey(e, isDown) {
+    if (isDown && !e.repeat) {
+      const m = /^Key([A-Z])$/.exec(e.code) || /^([a-zA-Z])$/.exec(e.key);
+      if (m) this.typed.push(m[1].toUpperCase());
+    }
     const action = this.codeToAction.get(e.code) || KEY_FALLBACK[e.key];
     if (!action) return;
     e.preventDefault();
@@ -61,5 +67,8 @@ export class Input {
   justPressed(action) { return this.pressed.has(action); }
 
   // Called once per frame after the first physics step has consumed presses.
-  flush() { this.pressed.clear(); }
+  flush() {
+    this.pressed.clear();
+    this.typed.length = 0;
+  }
 }

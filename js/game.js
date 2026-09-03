@@ -7,6 +7,8 @@ import { Particles } from './particles.js';
 import { pointInPoly, polysIntersect, dist2, rand } from './geom.js';
 
 const HI_KEY = 'asteroids.highscore';
+const SCORES_KEY = 'asteroids.scores';
+const LETTERS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
 
 function loadHigh() {
   try { return Number(localStorage.getItem(HI_KEY)) || 0; } catch { return 0; }
@@ -14,12 +16,38 @@ function loadHigh() {
 function saveHigh(v) {
   try { localStorage.setItem(HI_KEY, String(v)); } catch { /* private mode etc. */ }
 }
+function loadScores() {
+  try {
+    const raw = JSON.parse(localStorage.getItem(SCORES_KEY) || '[]');
+    if (Array.isArray(raw)) {
+      return raw
+        .filter((e) => e && typeof e.score === 'number' && typeof e.name === 'string')
+        .map((e) => ({ name: e.name.slice(0, 3), score: e.score }))
+        .sort((a, b) => b.score - a.score)
+        .slice(0, GAME.MAX_SCORES);
+    }
+  } catch { /* fall through */ }
+  return [];
+}
+function saveScores(list) {
+  try { localStorage.setItem(SCORES_KEY, JSON.stringify(list)); } catch { /* ignore */ }
+}
 
 export class Game {
   constructor() {
-    this.state = 'attract'; // 'attract' | 'playing' | 'gameover'
+    // 'attract' | 'playing' | 'gameover' | 'entry'
+    this.state = 'attract';
+    this.attractPhase = 'start'; // 'start' | 'scores'
+    this.phaseTimer = 0;
     this.score = 0;
-    this.highScore = loadHigh();
+    this.scores = loadScores();
+    const oldHigh = loadHigh();
+    if (this.scores.length === 0 && oldHigh > 0) {
+      // Carry over a high score from before the table existed.
+      this.scores.push({ name: '---', score: oldHigh });
+      saveScores(this.scores);
+    }
+    this.highScore = Math.max(oldHigh, this.scores[0] ? this.scores[0].score : 0);
     this.lives = 0;
     this.wave = 0;
     this.nextBonus = GAME.BONUS_EVERY;
@@ -29,6 +57,7 @@ export class Game {
     this.saucer = null;
     this.saucerTimer = 0;
     this.particles = new Particles();
+    this.entry = null;
     this.respawnTimer = 0;
     this.waveTimer = 0;
     this.stateTimer = 0;
@@ -40,6 +69,10 @@ export class Game {
     this.waveTime = 0;
     this.time = 0;
     this.spawnAttractField();
+  }
+
+  emit(name) {
+    this.events.push(name);
   }
 
   spawnAttractField() {
@@ -73,8 +106,12 @@ export class Game {
     this.waveTime = 0;
   }
 
-  emit(name) {
-    this.events.push(name);
+  toAttract() {
+    this.state = 'attract';
+    this.saucer = null;
+    this.attractPhase = this.scores.length ? 'scores' : 'start';
+    this.phaseTimer = 0;
+    if (this.rocks.length < 4) this.spawnAttractField();
   }
 
   onBlur() {
@@ -84,19 +121,36 @@ export class Game {
   update(dt, input) {
     this.time += dt;
 
-    if (this.state === 'attract' && input.justPressed('start')) {
-      this.startGame();
-      return;
-    }
-    if (this.state === 'playing' && input.justPressed('pause')) {
-      this.paused = !this.paused;
-    }
-    if (this.paused) return;
-
-    if (this.state === 'playing') {
-      this.waveTime += dt;
-      this.updateShip(dt, input);
-      this.updateSaucerSpawn(dt);
+    switch (this.state) {
+      case 'attract':
+        if (input.justPressed('start')) {
+          this.startGame();
+          return;
+        }
+        this.phaseTimer += dt;
+        if (this.phaseTimer >= GAME.ATTRACT_PHASE && this.scores.length) {
+          this.phaseTimer = 0;
+          this.attractPhase = this.attractPhase === 'start' ? 'scores' : 'start';
+        }
+        break;
+      case 'playing':
+        if (input.justPressed('pause')) this.paused = !this.paused;
+        if (this.paused) return;
+        this.waveTime += dt;
+        this.updateShip(dt, input);
+        this.updateSaucerSpawn(dt);
+        break;
+      case 'gameover':
+        this.stateTimer -= dt;
+        if (this.stateTimer <= 0 ||
+            (input.justPressed('start') && this.stateTimer <= GAME.GAMEOVER_DELAY - GAME.GAMEOVER_SKIP_AFTER)) {
+          this.finishGameOver();
+          return;
+        }
+        break;
+      case 'entry':
+        this.updateEntry(dt, input);
+        break;
     }
 
     for (const r of this.rocks) r.update(dt);
@@ -116,13 +170,6 @@ export class Game {
     if (this.state === 'playing') {
       this.collide();
       this.checkWave(dt);
-    } else if (this.state === 'gameover') {
-      this.stateTimer -= dt;
-      if (this.stateTimer <= 0) {
-        this.state = 'attract';
-        this.saucer = null;
-        if (this.rocks.length < 4) this.spawnAttractField();
-      }
     }
   }
 
@@ -158,6 +205,77 @@ export class Game {
       if (dist2(this.saucer.x, this.saucer.y, cx, cy) < d * d) return false;
     }
     return true;
+  }
+
+  // ---- game over and high scores ----
+
+  qualifies(score) {
+    if (score <= 0) return false;
+    if (this.scores.length < GAME.MAX_SCORES) return true;
+    return score > this.scores[this.scores.length - 1].score;
+  }
+
+  finishGameOver() {
+    if (this.qualifies(this.score)) {
+      this.state = 'entry';
+      this.entry = { name: ['A', 'A', 'A'], slot: 0, hold: 0 };
+    } else {
+      this.toAttract();
+    }
+  }
+
+  // Arcade-style initials: rotate to pick a letter, fire/hyperspace to accept.
+  // Keyboard players can also type letters directly and use Backspace.
+  updateEntry(dt, input) {
+    const e = this.entry;
+    const typed = input.typed.find((ch) => LETTERS.includes(ch));
+    if (typed) {
+      e.name[e.slot] = typed;
+      this.emit('select');
+      this.advanceEntry();
+      return;
+    }
+    if (input.justPressed('back')) {
+      if (e.slot > 0) e.slot--;
+      return;
+    }
+    let dir = 0;
+    if (input.justPressed('left')) dir = -1;
+    else if (input.justPressed('right')) dir = 1;
+    if (dir) {
+      e.hold = 0;
+    } else if (input.isDown('left') || input.isDown('right')) {
+      e.hold += dt;
+      if (e.hold > 0.4) {          // held: auto-repeat every 0.1 s
+        e.hold = 0.3;
+        dir = input.isDown('left') ? -1 : 1;
+      }
+    } else {
+      e.hold = 0;
+    }
+    if (dir) {
+      const i = LETTERS.indexOf(e.name[e.slot]);
+      e.name[e.slot] = LETTERS[(i + dir + LETTERS.length) % LETTERS.length];
+      this.emit('select');
+    }
+    if (input.justPressed('hyper') || input.justPressed('fire') || input.justPressed('start')) {
+      this.emit('select');
+      this.advanceEntry();
+    }
+  }
+
+  advanceEntry() {
+    this.entry.slot++;
+    if (this.entry.slot >= 3) this.commitEntry();
+  }
+
+  commitEntry() {
+    this.scores.push({ name: this.entry.name.join(''), score: this.score });
+    this.scores.sort((a, b) => b.score - a.score);
+    this.scores.length = Math.min(this.scores.length, GAME.MAX_SCORES);
+    saveScores(this.scores);
+    this.entry = null;
+    this.toAttract();
   }
 
   // ---- saucers ----
@@ -334,6 +452,8 @@ export class Game {
     }
   }
 
+  // ---- drawing ----
+
   draw(r) {
     r.begin();
 
@@ -351,19 +471,70 @@ export class Game {
     if (this.state === 'playing') r.lifeIcons(this.lives, 52, 74);
 
     const blink = Math.floor(this.time * 1.6) % 2 === 0;
-    if (this.state === 'attract') {
-      if (blink) r.text('PUSH START', W / 2, H / 2 - 14, 28, 'center');
-      r.text(this.touchMode ? 'TAP TO START' : 'PRESS ENTER', W / 2, H / 2 + 40, 13, 'center');
-      if (!this.touchMode) r.text(this.soundOff ? 'M - SOUND OFF' : 'M - SOUND ON', W / 2, H - 36, 11, 'center');
-      else if (this.soundOff) r.text('SOUND OFF', W / 2, H - 36, 11, 'center');
-    } else if (this.state === 'gameover') {
-      r.text('GAME OVER', W / 2, H / 2 - 14, 28, 'center');
-    } else if (this.paused) {
-      r.text('PAUSED', W / 2, H / 2 - 14, 28, 'center');
-      if (this.touchMode) r.text('TAP TO RESUME', W / 2, H / 2 + 40, 13, 'center');
+    const startHint = this.touchMode ? 'TAP TO START' : 'PRESS ENTER';
+    switch (this.state) {
+      case 'attract':
+        if (this.attractPhase === 'scores') this.drawScores(r, blink);
+        else this.drawStartScreen(r, blink, startHint);
+        break;
+      case 'gameover':
+        r.text('GAME OVER', W / 2, H / 2 - 14, 28, 'center');
+        if (this.stateTimer <= GAME.GAMEOVER_DELAY - GAME.GAMEOVER_SKIP_AFTER && blink) {
+          r.text(startHint, W / 2, H / 2 + 40, 13, 'center');
+        }
+        break;
+      case 'entry':
+        this.drawEntry(r, blink);
+        break;
+      case 'playing':
+        if (this.paused) {
+          r.text('PAUSED', W / 2, H / 2 - 14, 28, 'center');
+          if (this.touchMode) r.text('TAP TO RESUME', W / 2, H / 2 + 40, 13, 'center');
+        }
+        break;
     }
     if (this.state !== 'attract' && this.soundOff) r.text('SOUND OFF', W / 2, H - 36, 11, 'center');
 
     r.end();
+  }
+
+  drawStartScreen(r, blink, startHint) {
+    if (blink) r.text('PUSH START', W / 2, H / 2 - 14, 28, 'center');
+    r.text(startHint, W / 2, H / 2 + 40, 13, 'center');
+    if (!this.touchMode) r.text(this.soundOff ? 'M - SOUND OFF' : 'M - SOUND ON', W / 2, H - 36, 11, 'center');
+    else if (this.soundOff) r.text('SOUND OFF', W / 2, H - 36, 11, 'center');
+  }
+
+  drawScores(r, blink) {
+    r.text('HIGH SCORES', W / 2, 120, 20, 'center');
+    const top = 180, step = 34, size = 16;
+    this.scores.forEach((e, i) => {
+      const y = top + i * step;
+      r.text(`${i + 1}.`, W / 2 - 90, y, size, 'right');
+      r.text(String(e.score), W / 2 + 40, y, size, 'right');
+      r.text(e.name, W / 2 + 70, y, size, 'left');
+    });
+    if (blink) r.text('PUSH START', W / 2, H - 80, 16, 'center');
+  }
+
+  drawEntry(r, blink) {
+    const e = this.entry;
+    const y0 = 150;
+    r.text('YOUR SCORE IS ONE OF THE TEN BEST', W / 2, y0, 14, 'center');
+    r.text('PLEASE ENTER YOUR INITIALS', W / 2, y0 + 36, 14, 'center');
+    if (this.touchMode) {
+      r.text('PUSH ROTATE TO SELECT LETTER', W / 2, y0 + 90, 12, 'center');
+      r.text('PUSH FIRE WHEN LETTER IS CORRECT', W / 2, y0 + 116, 12, 'center');
+    } else {
+      r.text('LEFT/RIGHT OR TYPE TO SELECT LETTER', W / 2, y0 + 90, 12, 'center');
+      r.text('PRESS FIRE OR ENTER WHEN LETTER IS CORRECT', W / 2, y0 + 116, 12, 'center');
+    }
+    const size = 36, spacing = 56, y = H / 2 + 40;
+    for (let i = 0; i < 3; i++) {
+      const x = W / 2 + (i - 1) * spacing;
+      const current = i === e.slot;
+      if (i < e.slot || (current && blink)) r.text(e.name[i], x, y, size, 'center');
+      if (current) r.text('_', x, y + 8, size, 'center');
+    }
   }
 }

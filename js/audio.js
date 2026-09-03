@@ -75,6 +75,7 @@ export class Audio {
     if (!this.ctx || this.muted) return;
     switch (name) {
       case 'fire':          this.tone('square', 880, 110, 0.14, 0.18); break;
+      case 'select':        this.tone('square', 1200, 1200, 0.04, 0.12); break;
       case 'explodeL':      this.noiseBurst(1.0, 500, 60, 0.7); break;
       case 'explodeM':      this.noiseBurst(0.6, 900, 120, 0.55); break;
       case 'explodeS':      this.noiseBurst(0.35, 1600, 250, 0.45); break;

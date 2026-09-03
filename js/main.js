@@ -50,7 +50,8 @@ function frame(now) {
     return;
   }
 
-  if (input.justPressed('mute')) {
+  // (M is a letter while entering initials, so it doesn't toggle mute there.)
+  if (input.justPressed('mute') && game.state !== 'entry') {
     audio.toggleMute();
     game.soundOff = audio.muted;
   }

@@ -34,7 +34,10 @@ export const WAVE = {
 export const GAME = {
   LIVES: 3,
   BONUS_EVERY: 10000,
-  GAMEOVER_DELAY: 4,
+  GAMEOVER_DELAY: 3,      // seconds GAME OVER shows before moving on
+  GAMEOVER_SKIP_AFTER: 1, // start can cut that short after this long
+  ATTRACT_PHASE: 8,       // seconds per attract screen (start / high scores)
+  MAX_SCORES: 10,
 };
 
 export const SAUCER = {
