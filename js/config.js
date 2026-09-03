@@ -36,3 +36,24 @@ export const GAME = {
   BONUS_EVERY: 10000,
   GAMEOVER_DELAY: 4,
 };
+
+export const SAUCER = {
+  L: { r: 22, score: 200,  speed: 110, fireInterval: 1.2 },
+  S: { r: 12, score: 1000, speed: 150, fireInterval: 0.9 },
+  FIRST_DELAY: [8, 14],   // seconds after a game starts before the first saucer
+  DELAY: [7, 14],         // seconds between saucers
+  MAX_BULLETS: 2,
+  BULLET_SPEED: 420,
+  BULLET_LIFE: 1.2,
+  SMALL_MIN_PROB: 0.15,   // chance a saucer is small at low scores
+  SMALL_START_SCORE: 5000,
+  SMALL_FULL_SCORE: 35000, // from here on, only small saucers
+  AIM_ERROR_MAX: 0.35,    // radians, small saucer aim error at score 0
+  AIM_ERROR_MIN: 0.04,    // radians, at SMALL_FULL_SCORE
+};
+
+export const HYPER = {
+  DURATION: 0.9,          // seconds the ship is gone
+  DEATH_CHANCE: 1 / 12,   // chance of exploding on re-entry
+  MARGIN: 60,             // keep re-entry away from the edges
+};

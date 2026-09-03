@@ -1,5 +1,5 @@
-import { W, H, SHIP, BULLET } from './config.js';
-import { wrap, transformPoly } from './geom.js';
+import { W, H, SHIP, BULLET, HYPER } from './config.js';
+import { wrap, transformPoly, rand } from './geom.js';
 import { Bullet } from './bullet.js';
 
 // Local-space geometry, nose pointing along +x.
@@ -34,9 +34,30 @@ export class Ship {
     this.thrusting = false;
     this.flameOn = false;
     this.flameClock = 0;
+    this.inHyper = false;
+    this.hyperTimer = 0;
   }
 
+  // Returns an event name ('hyperOut', 'hyperIn', 'hyperDeath') or null.
   update(dt, input) {
+    if (this.inHyper) {
+      this.hyperTimer -= dt;
+      if (this.hyperTimer > 0) return null;
+      this.inHyper = false;
+      this.x = rand(HYPER.MARGIN, W - HYPER.MARGIN);
+      this.y = rand(HYPER.MARGIN, H - HYPER.MARGIN);
+      this.vx = 0;
+      this.vy = 0;
+      return Math.random() < HYPER.DEATH_CHANCE ? 'hyperDeath' : 'hyperIn';
+    }
+    if (input.justPressed('hyper')) {
+      this.inHyper = true;
+      this.hyperTimer = HYPER.DURATION;
+      this.thrusting = false;
+      this.flameOn = false;
+      return 'hyperOut';
+    }
+
     if (input.isDown('left')) this.angle -= SHIP.ROT_SPEED * dt;
     if (input.isDown('right')) this.angle += SHIP.ROT_SPEED * dt;
 
@@ -63,6 +84,7 @@ export class Ship {
     this.x += this.vx * dt;
     this.y += this.vy * dt;
     wrap(this, SHIP.RADIUS);
+    return null;
   }
 
   verts() {

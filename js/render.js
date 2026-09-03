@@ -1,6 +1,7 @@
 import { W, H } from './config.js';
 import { drawText } from './vecfont.js';
 import { SHIP_STROKES, FLAME_STROKE } from './ship.js';
+import { SAUCER_STROKES } from './saucer.js';
 
 export class Renderer {
   constructor(canvas) {
@@ -111,6 +112,10 @@ export class Renderer {
 
   rock(rock) {
     this.poly(rock.verts());
+  }
+
+  saucer(s) {
+    this.strokes(SAUCER_STROKES, s.x, s.y, 0, s.r);
   }
 
   dot(x, y, r = 1.4) {

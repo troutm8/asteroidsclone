@@ -13,18 +13,22 @@ export class Particles {
     this.segs.length = 0;
   }
 
-  rockBurst(rock) {
-    const n = rock.size === 'L' ? 12 : rock.size === 'M' ? 9 : 6;
+  burst(x, y, vx, vy, n) {
     for (let i = 0; i < n; i++) {
       const a = rand(0, TAU);
       const s = rand(25, 120);
       this.dots.push({
-        x: rock.x, y: rock.y,
-        vx: rock.vx * 0.3 + Math.cos(a) * s,
-        vy: rock.vy * 0.3 + Math.sin(a) * s,
+        x, y,
+        vx: vx * 0.3 + Math.cos(a) * s,
+        vy: vy * 0.3 + Math.sin(a) * s,
         life: rand(0.4, 0.9),
       });
     }
+  }
+
+  rockBurst(rock) {
+    const n = rock.size === 'L' ? 12 : rock.size === 'M' ? 9 : 6;
+    this.burst(rock.x, rock.y, rock.vx, rock.vy, n);
   }
 
   shipBurst(ship) {

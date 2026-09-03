@@ -1,8 +1,10 @@
-import { W, H, SHIP, BULLET, ROCK, WAVE, GAME } from './config.js';
+import { W, H, SHIP, BULLET, WAVE, GAME, SAUCER } from './config.js';
 import { Ship } from './ship.js';
 import { Asteroid } from './asteroid.js';
+import { Saucer } from './saucer.js';
+import { Bullet } from './bullet.js';
 import { Particles } from './particles.js';
-import { pointInPoly, polysIntersect, dist2 } from './geom.js';
+import { pointInPoly, polysIntersect, dist2, rand } from './geom.js';
 
 const HI_KEY = 'asteroids.highscore';
 
@@ -24,6 +26,8 @@ export class Game {
     this.ship = new Ship();
     this.rocks = [];
     this.bullets = [];
+    this.saucer = null;
+    this.saucerTimer = 0;
     this.particles = new Particles();
     this.respawnTimer = 0;
     this.waveTimer = 0;
@@ -47,6 +51,8 @@ export class Game {
     this.nextBonus = GAME.BONUS_EVERY;
     this.rocks = [];
     this.bullets = [];
+    this.saucer = null;
+    this.saucerTimer = rand(...SAUCER.FIRST_DELAY);
     this.particles.clear();
     this.paused = false;
     this.waveTimer = 0;
@@ -77,11 +83,23 @@ export class Game {
     }
     if (this.paused) return;
 
-    if (this.state === 'playing') this.updateShip(dt, input);
+    if (this.state === 'playing') {
+      this.updateShip(dt, input);
+      this.updateSaucerSpawn(dt);
+    }
 
     for (const r of this.rocks) r.update(dt);
     for (const b of this.bullets) b.update(dt);
     this.bullets = this.bullets.filter((b) => !b.dead);
+    if (this.saucer) {
+      const fire = this.saucer.update(dt);
+      if (this.saucer.gone) {
+        this.saucer = null;
+        this.resetSaucerTimer();
+      } else if (fire && this.state === 'playing') {
+        this.saucerFire();
+      }
+    }
     this.particles.update(dt);
 
     if (this.state === 'playing') {
@@ -91,6 +109,7 @@ export class Game {
       this.stateTimer -= dt;
       if (this.stateTimer <= 0) {
         this.state = 'attract';
+        this.saucer = null;
         if (this.rocks.length < 4) this.spawnAttractField();
       }
     }
@@ -99,8 +118,12 @@ export class Game {
   updateShip(dt, input) {
     const ship = this.ship;
     if (ship.alive) {
-      ship.update(dt, input);
-      if (input.justPressed('fire')) {
+      const ev = ship.update(dt, input);
+      if (ev === 'hyperDeath') {
+        this.shipDie();
+        return;
+      }
+      if (!ship.inHyper && input.justPressed('fire')) {
         const inFlight = this.bullets.reduce((n, b) => n + (b.owner === 'ship'), 0);
         if (inFlight < BULLET.MAX) this.bullets.push(ship.fireBullet());
       }
@@ -116,49 +139,143 @@ export class Game {
       const d = SHIP.SAFE_RADIUS + r.r;
       if (dist2(r.x, r.y, cx, cy) < d * d) return false;
     }
+    if (this.saucer) {
+      const d = SHIP.SAFE_RADIUS + this.saucer.r;
+      if (dist2(this.saucer.x, this.saucer.y, cx, cy) < d * d) return false;
+    }
     return true;
+  }
+
+  // ---- saucers ----
+
+  resetSaucerTimer() {
+    this.saucerTimer = rand(...SAUCER.DELAY);
+  }
+
+  updateSaucerSpawn(dt) {
+    if (this.saucer) return;
+    this.saucerTimer -= dt;
+    if (this.saucerTimer <= 0) this.spawnSaucer();
+  }
+
+  spawnSaucer() {
+    const span = SAUCER.SMALL_FULL_SCORE - SAUCER.SMALL_START_SCORE;
+    const t = Math.min(1, Math.max(0, (this.score - SAUCER.SMALL_START_SCORE) / span));
+    const pSmall = SAUCER.SMALL_MIN_PROB + (1 - SAUCER.SMALL_MIN_PROB) * t;
+    this.saucer = new Saucer(Math.random() < pSmall ? 'S' : 'L');
+  }
+
+  saucerFire() {
+    const s = this.saucer;
+    const inFlight = this.bullets.reduce((n, b) => n + (b.owner === 'saucer'), 0);
+    if (inFlight >= SAUCER.MAX_BULLETS) return;
+    const target = this.ship.alive && !this.ship.inHyper ? this.ship : null;
+    const a = s.aim(target, this.score);
+    const c = Math.cos(a), sn = Math.sin(a);
+    this.bullets.push(new Bullet(
+      s.x + c * (s.r + 2), s.y + sn * (s.r + 2),
+      c * SAUCER.BULLET_SPEED, sn * SAUCER.BULLET_SPEED,
+      SAUCER.BULLET_LIFE, 'saucer'
+    ));
+  }
+
+  destroySaucer(award) {
+    const s = this.saucer;
+    if (!s) return;
+    this.particles.burst(s.x, s.y, s.vx, s.vy, s.size === 'L' ? 10 : 7);
+    if (award) this.addScore(s.score);
+    this.saucer = null;
+    this.resetSaucerTimer();
+  }
+
+  // ---- collisions ----
+
+  shipVulnerable() {
+    return this.ship.alive && !this.ship.inHyper;
   }
 
   collide() {
     const rocks = this.rocks;
+    const ship = this.ship;
 
-    // Ship bullets vs rocks.
+    // Bullets vs rocks, ship bullets vs saucer, saucer bullets vs ship.
     for (let i = this.bullets.length - 1; i >= 0; i--) {
       const b = this.bullets[i];
-      if (b.owner !== 'ship') continue;
+      let hit = false;
       for (let j = rocks.length - 1; j >= 0; j--) {
         const r = rocks[j];
         const reach = r.r + 4;
         if (dist2(b.x, b.y, r.x, r.y) > reach * reach) continue;
         if (pointInPoly(b.x, b.y, r.verts())) {
-          this.bullets.splice(i, 1);
-          this.destroyRock(j);
+          this.destroyRock(j, b.owner === 'ship');
+          hit = true;
+          break;
+        }
+      }
+      if (!hit && b.owner === 'ship' && this.saucer) {
+        const s = this.saucer;
+        const reach = s.r + 4;
+        if (dist2(b.x, b.y, s.x, s.y) <= reach * reach && pointInPoly(b.x, b.y, s.verts())) {
+          this.destroySaucer(true);
+          hit = true;
+        }
+      }
+      if (!hit && b.owner === 'saucer' && this.shipVulnerable()) {
+        const reach = SHIP.RADIUS + 4;
+        if (dist2(b.x, b.y, ship.x, ship.y) <= reach * reach && pointInPoly(b.x, b.y, ship.verts())) {
+          this.shipDie();
+          hit = true;
+        }
+      }
+      if (hit) this.bullets.splice(i, 1);
+    }
+
+    // Saucer vs rocks: both are destroyed, no points.
+    if (this.saucer) {
+      const s = this.saucer;
+      const sv = s.verts();
+      for (let j = rocks.length - 1; j >= 0; j--) {
+        const r = rocks[j];
+        const reach = r.r + s.r;
+        if (dist2(s.x, s.y, r.x, r.y) > reach * reach) continue;
+        if (polysIntersect(sv, r.verts())) {
+          this.destroyRock(j, false);
+          this.destroySaucer(false);
           break;
         }
       }
     }
 
     // Ship vs rocks.
-    const ship = this.ship;
-    if (ship.alive) {
+    if (this.shipVulnerable()) {
       const sv = ship.verts();
       for (let j = rocks.length - 1; j >= 0; j--) {
         const r = rocks[j];
         const reach = r.r + SHIP.RADIUS;
         if (dist2(ship.x, ship.y, r.x, r.y) > reach * reach) continue;
         if (polysIntersect(sv, r.verts())) {
-          this.destroyRock(j);
+          this.destroyRock(j, true);
           this.shipDie();
           break;
         }
       }
     }
+
+    // Ship vs saucer: both die, points awarded.
+    if (this.shipVulnerable() && this.saucer) {
+      const s = this.saucer;
+      const reach = s.r + SHIP.RADIUS;
+      if (dist2(ship.x, ship.y, s.x, s.y) <= reach * reach && polysIntersect(ship.verts(), s.verts())) {
+        this.destroySaucer(true);
+        this.shipDie();
+      }
+    }
   }
 
-  destroyRock(index) {
+  destroyRock(index, award = true) {
     const rock = this.rocks[index];
     this.rocks.splice(index, 1);
-    this.addScore(rock.score);
+    if (award) this.addScore(rock.score);
     this.particles.rockBurst(rock);
     this.rocks.push(...rock.split());
   }
@@ -176,6 +293,7 @@ export class Game {
     const ship = this.ship;
     this.particles.shipBurst(ship);
     ship.alive = false;
+    ship.inHyper = false;
     this.lives--;
     if (this.lives <= 0) {
       this.state = 'gameover';
@@ -202,9 +320,10 @@ export class Game {
     r.begin();
 
     for (const rock of this.rocks) r.rock(rock);
+    if (this.saucer) r.saucer(this.saucer);
     for (const b of this.bullets) r.dot(b.x, b.y);
     r.particles(this.particles);
-    if (this.ship.alive && this.state === 'playing') r.ship(this.ship);
+    if (this.shipVulnerable() && this.state === 'playing') r.ship(this.ship);
 
     // HUD
     const scoreText = this.score === 0 ? '00' : String(this.score);
